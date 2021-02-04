@@ -1,0 +1,26 @@
+tensorboardX~=1.7
+
+scikit-learn~=0.19.2
+numpy~=1.15.4
+# PyTorch
+torch>=1.0.0
+# progress bars in model download and training scripts
+tqdm~=4.32.2
+# Accessing files from S3 directly.
+boto3~=1.9.174
+# Used for downloading models over HTTP
+requests~=2.22.0
+# For OpenAI GPT
+regex~=2018.11.22
+# For XLNet
+# sentencepiece
+# For XLM
+sacremoses~=0.0.33
+allennlp~=0.8.5
+sklearn~=0.0
+scipy~=1.1.0
+pytest~=5.1.2
+six~=1.11.0
+botocore~=1.12.174
+tensorflow~=1.12.0
+Flask~=1.1.1

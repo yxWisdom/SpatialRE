@@ -1,0 +1,22 @@
+{
+  "model_type": "bert_lstm_softmax",
+  "encoder_params": {
+    "pretrain_path": "pretrained_model/bert-base-uncased",
+    "out_dim": 256,
+    "features": [2, 10],
+    "bert_in_dim": 768,
+    "bert_out_dim": 256,
+    "feature_dim": 64,
+    "feature_mode": "sum",
+    "custom_embed": true,
+    "embed_requires_grad": false,
+    "use_pos_embed": false,
+    "max_seq_len":512,
+    "fine_tuning": true
+  },
+  "model_params": {
+    "lstm_hidden_size": 256,
+    "dropout": 0.1,
+    "num_layers": 2
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "model_type": "bert_transformer_crf",
+  "encoder_params": {
+    "pretrain_path": "pretrained_model/bert-base-uncased",
+    "out_dim": 768,
+    "features": [2, 10],
+    "bert_in_dim": 768,
+    "bert_out_dim": 768,
+    "feature_dim": 64,
+    "feature_mode": "sum",
+    "custom_embed": false,
+    "embed_requires_grad": true,
+    "use_pos_embed": false,
+    "max_seq_len":512,
+    "fine_tuning": true
+  },
+  "model_params": {
+    "num_layers": 6,
+    "num_attention_heads": 6,
+    "dim_feedforward": 1536,
+    "dropout": 0.0,
+    "attn_dropout": 0.1,
+    "activation": "relu"
+  }
+}
