@@ -61,11 +61,14 @@ class BertEncoder(nn.Module):
             for name, param in self.bert.named_parameters():
                 param.requires_grad = False
 
-    def forward(self, tokens, features: Tuple, attention_mask=None):
+    def forward(self, tokens, features: Tuple = None, attention_mask=None, only_bert=False):
         sequence_output = self.bert(tokens, attention_mask=attention_mask)[0]
         if hasattr(self, "dense"):
             sequence_output = self.dense(sequence_output)
         sequence_output = bert_sequence_output_wrapper(sequence_output)
+
+        if only_bert:
+            return sequence_output
 
         if self.use_pos_embed:
             seq_length = tokens.size(1)

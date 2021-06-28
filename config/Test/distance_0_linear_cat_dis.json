@@ -1,0 +1,31 @@
+{
+  "model_type": "entity_aware_transformer",
+  "use_rel_pos": false,
+  "used_feature_name": ["tags"],
+  "encoder_params": {
+    "pretrain_path": "pretrained_model/bert-base-uncased",
+    "out_dim": 400,
+    "bert_in_dim": 768,
+    "bert_out_dim": 300,
+    "feature_dim": 50,
+    "feature_mode": "concat",
+    "custom_embed": false,
+    "embed_requires_grad": true,
+    "use_pos_embed": true,
+    "fine_tuning": true
+  },
+  "model_params": {
+    "num_layers": 6,
+    "num_attention_heads": 12,
+    "dim_feedforward": 3072,
+    "dropout": 0.0,
+    "attn_dropout": 0.0,
+    "activation": "relu",
+    "max_distance": 0,
+    "selection_layer": "LinearLayer",
+
+    "selection_layer_params": {
+      "hidden_size": 256
+    }
+  }
+}

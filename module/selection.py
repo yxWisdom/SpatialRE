@@ -1,10 +1,10 @@
 import torch
+from allennlp.modules import FeedForward
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import relu, gelu, tanh
 from torch.nn.parameter import Parameter
 import math
-
 
 class OriMHSLayer(nn.Module):
     def __init__(self, input_size, hidden_size, num_labels):
@@ -100,6 +100,27 @@ class BaseMHSLayer(nn.Module):
 #         output = self.fc(torch.cat((s, t), dim=-1))
 #         output = output.permute(0, 1, 3, 2)
 #         return output
+
+class MLPLayer(nn.Module):
+    def __init__(self, input_size, hidden_size, num_labels, activation="relu"):
+        super(MLPLayer, self).__init__()
+        self.mlp = nn.Sequential(
+            FeedForward(input_dim=input_size * 2,
+                        num_layers=2,
+                        hidden_dims=hidden_size,
+                        activations=relu,
+                        dropout=0.2),
+            nn.Linear(hidden_size, num_labels)
+        )
+
+    def forward(self, input_tensor):
+        B, L, H = input_tensor.size()
+        s = input_tensor.unsqueeze(2).expand(B, L, L, -1)
+        t = input_tensor.unsqueeze(1).expand(B, L, L, -1)
+        cat_tensor = torch.cat((s, t), dim=-1)
+        output = self.mlp(cat_tensor)
+        output = output.permute(0, 1, 3, 2)
+        return output
 
 
 class LinearLayer(nn.Module):
@@ -613,6 +634,7 @@ class DepBiAffineLayer2(nn.Module):
 ACT2FN = {"gelu": gelu, "relu": relu, "tanh": tanh}
 
 INFERENCE_CLASS = {
+    "MLPLayer": MLPLayer,
     "OriMHSLayer": OriMHSLayer,
     "BaseMHSLayer": BaseMHSLayer,
     "LinearLayer": LinearLayer,

@@ -1,14 +1,14 @@
 from __future__ import absolute_import, division, print_function
 
-import csv
-from itertools import islice, groupby
+import itertools
 import logging
 import os
-import sys
 from io import open
+from itertools import groupby
 
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score
+
+from utils.seq_labeling_eval import classification_report_dict
 
 logger = logging.getLogger(__name__)
 
@@ -124,45 +124,95 @@ class BertNerDataProcessor(DataProcessor):
             examples.append(InputExample(guid=guid, text=text, tokens=tokens, labels=labels))
         return examples
 
-    def save_predict(self, tokenizer, all_p_label_ids, out_path, set_type="dev"):
+    def post_process(self, pred_results, tokenizer, set_type="dev"):
+        examples = self.dev_examples if set_type == "dev" else self.test_examples
+        new_pred_results = []
+        for example, pred_labels in zip(examples, pred_results):
+            tokens = example.tokens
+            new_labels = [''] * len(tokens)
+
+            align_token_pos = []
+            for idx, token in enumerate(tokens):
+                sub_tokens = tokenizer.tokenize(token)
+                align_token_pos.extend([idx] * len(sub_tokens))
+
+            for idx, label_id in zip(align_token_pos, pred_labels):
+                if new_labels[idx] == '':
+                    new_labels[idx] = self.labels[label_id]
+
+            new_pred_results.append(new_labels)
+        return new_pred_results
+
+    def evaluate(self, pred_results, set_type="dev", eval_full=False):
+        examples = self.dev_examples if set_type == "dev" else self.test_examples
+        # pred_results = self.post_process(pred_results, tokenizer, set_type)
+        gold_list = list(map(lambda x: x.labels, examples))
+        pred_labels = list(itertools.chain(*pred_results))
+        gold_labels = list(itertools.chain(*gold_list))
+        if not eval_full:
+            eval_labels = ["PLACE", "PATH", "NONMOTION_EVENT", "SPATIAL_ENTITY", "MOTION"]
+        else:
+            eval_labels = None
+        eval_dict = classification_report_dict(gold_labels, pred_labels, eval_labels=eval_labels)
+        return eval_dict
+
+    def save_predict(self, pred_results, out_path, set_type="dev", mark_error=True):
         examples = self.dev_examples if set_type == 'dev' else self.test_examples
         lines = []
-        for example, p_label_ids in zip(examples, all_p_label_ids):
-            # tokens = list(itertools.chain.from_iterable([tokenizer.tokenize(token) for token in example.tokens]))
-            token_pieces = [tokenizer.tokenize(token) for token in example.tokens]
-            token_pieces_len = [len(piece) for piece in token_pieces]
-
-            it = iter([self.labels[label_id] for label_id in p_label_ids])
-            p_label_pieces = [list(islice(it, 0, i)) for i in token_pieces_len]
-
-            for raw_token, raw_label, tokens, p_labels in zip(example.tokens, example.labels, token_pieces,
-                                                              p_label_pieces):
-                if self.keep_span:
-                    try:
-                        lines.append((raw_token, raw_label, p_labels[0]))
-                    except:
-                        print()
-                        print(raw_token, raw_label, p_labels)
-                        print(list(zip(token_pieces, p_label_pieces)))
-                        print()
-                else:
-                    tokens, _tmp_tokens = [], tokens
-                    p_labels, _tmp_p_labels = [], p_labels
-                    for token, label in zip(_tmp_tokens, _tmp_p_labels):
-                        if token.startswith("##"):
-                            tokens[-1] += token[2:]
-                        else:
-                            tokens.append(token)
-                            p_labels.append(label)
-                    g_labels = _get_padded_labels(tokens, raw_label)
-                    lines.extend(list(zip(tokens, g_labels, p_labels)))
-            lines.append([])
+        for example, p_labels in zip(examples, pred_results):
+            tokens = example.tokens
+            g_labels = example.labels
+            # p_labels = [self.labels[i] for i in p_label_ids]
+            for token, g_label, p_label in zip(tokens, g_labels, p_labels):
+                line = f"{token}\t{g_label}\t{p_label}"
+                if mark_error and g_label != p_label:
+                    line += "\tERROR"
+                lines.append(line)
+            lines.append("")
         path = os.path.join(out_path, "predict.txt")
         with open(path, 'w', encoding="utf-8") as writer:
             for line in lines:
-                writer.write(" ".join(line) + "\n")
+                writer.write(line + "\n")
         return zip(*(filter(lambda x: len(x) > 0, lines)))
 
+    # def save_predict(self, tokenizer, all_p_label_ids, out_path, set_type="dev"):
+    #     examples = self.dev_examples if set_type == 'dev' else self.test_examples
+    #     lines = []
+    #     for example, p_label_ids in zip(examples, all_p_label_ids):
+    #         # tokens = list(itertools.chain.from_iterable([tokenizer.tokenize(token) for token in example.tokens]))
+    #         token_pieces = [tokenizer.tokenize(token) for token in example.tokens]
+    #         token_pieces_len = [len(piece) for piece in token_pieces]
+    #
+    #         it = iter([self.labels[label_id] for label_id in p_label_ids])
+    #         p_label_pieces = [list(islice(it, 0, i)) for i in token_pieces_len]
+    #
+    #         for raw_token, raw_label, tokens, p_labels in zip(example.tokens, example.labels, token_pieces,
+    #                                                           p_label_pieces):
+    #             if self.keep_span:
+    #                 try:
+    #                     lines.append((raw_token, raw_label, p_labels[0]))
+    #                 except:
+    #                     print()
+    #                     print(raw_token, raw_label, p_labels)
+    #                     print(list(zip(token_pieces, p_label_pieces)))
+    #                     print()
+    #             else:
+    #                 tokens, _tmp_tokens = [], tokens
+    #                 p_labels, _tmp_p_labels = [], p_labels
+    #                 for token, label in zip(_tmp_tokens, _tmp_p_labels):
+    #                     if token.startswith("##"):
+    #                         tokens[-1] += token[2:]
+    #                     else:
+    #                         tokens.append(token)
+    #                         p_labels.append(label)
+    #                 g_labels = _get_padded_labels(tokens, raw_label)
+    #                 lines.extend(list(zip(tokens, g_labels, p_labels)))
+    #         lines.append([])
+    #     path = os.path.join(out_path, "predict.txt")
+    #     with open(path, 'w', encoding="utf-8") as writer:
+    #         for line in lines:
+    #             writer.write(" ".join(line) + "\n")
+    #     return zip(*(filter(lambda x: len(x) > 0, lines)))
 
 def convert_examples_to_features(examples, label_list, max_seq_length,
                                  tokenizer, use_x_tag=True,

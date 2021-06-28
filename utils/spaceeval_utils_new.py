@@ -7,10 +7,10 @@ from collections import defaultdict
 from xml.etree import ElementTree
 from xml.etree.ElementTree import Element
 
+from utils.spaceeval_utils import Metrics
+
 # eval_optional_roles是否评测move links的可选角色
 # eval_null_roles是否允许角色是空的
-
-from enum import Enum
 
 qs_roles = ["trigger", "trajector", "landmark"]
 move_core_roles = ["trigger", "mover"]
@@ -23,12 +23,6 @@ link2roles = {
     "OLINK": ["trigger", "trajector", "landmark"],
     "MOVELINK": ["trigger", "mover", "source", "goal", "ground", "midPoint", "pathID", "motion_signalID"]
 }
-
-
-class Metrics(Enum):
-    OFFICIAL = 1
-    STRICT = 2
-    DEFAULT = 3
 
 
 def parse_no_trigger(element: Element, element_dict: dict, metric: Metrics):

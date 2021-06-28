@@ -10,7 +10,8 @@ from utils.seq_labeling_eval import classification_report
 
 import numpy as np
 
-from utils.spaceeval_utils_new import load_links_from_file, Metrics
+from utils.spaceeval_utils_new import load_links_from_file
+from utils.spaceeval_utils import Metrics
 
 logger = logging.getLogger(__name__)
 

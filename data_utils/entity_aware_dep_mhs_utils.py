@@ -1,21 +1,16 @@
-import collections
+import bisect
 import itertools
 import logging
-import operator
 import os
 from collections import OrderedDict
-import bisect
+from collections import defaultdict
+from itertools import groupby
 
-from dataclasses import dataclass
 import numpy as np
-from itertools import groupby, chain
+from dataclasses import dataclass
 
 from utils.bert_utils import align_labels
-
-from collections import defaultdict, Counter
-
-from utils.spaceeval_utils import load_gold_triple
-from utils.spaceeval_utils_new import Metrics, load_links_from_file
+from utils.spaceeval_utils import Metrics, Document
 
 logger = logging.getLogger(__name__)
 
@@ -591,14 +586,14 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
         super().__init__(data_dir, tokenizer, used_feature_names, use_x_tag, keep_span, use_head)
         self.role2link_dict = {"trajector_Q": "QSLINK", "landmark_Q": "QSLINK",
                                "trajector_O": "OLINK", "landmark_O": "OLINK",
-                               "locatedIn": "NoTrigger",
+                               "QSLINK": "NoTrigger", "OLINK": "NoTrigger",
                                "mover": "MOVELINK", "source": "MOVELINK", "midPoint": "MOVELINK", "goal": "MOVELINK",
                                "motion_signalID": "MOVELINK", "pathID": "MOVELINK", "ground": "MOVELINK"}
         self.link2role_dict = {
             "QSLINK": ["trajector_Q", "landmark_Q"],
             "OLINK": ["trajector_O", "landmark_O"],
             "MOVELINK": ["mover", "source", "goal", "ground", "midPoint", "pathID", "motion_signalID"],
-            "NoTrigger": ["locatedIn"],
+            # "NoTrigger": ["locatedIn"],
         }
 
     def get_links(self, spo_triples):
@@ -609,9 +604,14 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
             if role_type not in self.role2link_dict:
                 continue
             link_type = self.role2link_dict[role_type]
-            if s not in raw_link_dict[link_type]:
-                raw_link_dict[link_type][s] = OrderedDict([(role, set()) for role in self.link2role_dict[link_type]])
-            raw_link_dict[link_type][s][role_type].add(o)
+            if link_type == "NoTrigger":
+                link2tuples[link_type].add((link_type, '', s, o))
+                # comment: role_type is QSLINK or OLINK
+                link2tuples[role_type].add((role_type, '', s, o))
+            else:
+                if s not in raw_link_dict[link_type]:
+                    raw_link_dict[link_type][s] = OrderedDict([(role, set()) for role in self.link2role_dict[link_type]])
+                raw_link_dict[link_type][s][role_type].add(o)
 
         for link_type, link_dict in raw_link_dict.items():
             for trigger, role_dict in link_dict.items():
@@ -626,16 +626,14 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
                             role_set.add("")
                         role_group += (role_set,)
                 for tuple_ in itertools.product(*role_group):
-                    # TODO: 注意NoTrigger
-                    if link_type == "NoTrigger":
-                        trajector = trigger
-                        link2tuples[link_type].add((link_type, '', trajector) + tuple_)
-                        link2tuples["QSLINK"].add(("QSLINK", '', trajector) + tuple_)
-                    # elif link_type == "MOVELINK" and not eval_optional_roles:
-                    #     link_tuple = (link_type, trigger,) + tuple_
-                    #     link2tuples[link_type].add(link_tuple[:3])
-                    else:
-                        link2tuples[link_type].add((link_type, trigger,) + tuple_)
+                    link2tuples[link_type].add((link_type, trigger,) + tuple_)
+                    # # TODO: 注意NoTrigger
+                    # if link_type == "NoTrigger":
+                    #     trajector = trigger
+                    #     link2tuples[link_type].add((link_type, '', trajector) + tuple_)
+                    #     link2tuples["QSLINK"].add(("QSLINK", '', trajector) + tuple_)
+                    # else:
+
 
         return link2tuples
 
@@ -698,12 +696,14 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
             eval_dict[k]["f1"] = f
         return eval_dict
 
-    def evaluate_1(self, pred_triples_list, metric: Metrics):
+    def evaluate_exact(self, pred_triples_list, metric: Metrics, eval_optional_roles=True, eval_link_attr=False):
         link_types = ["MOVELINK", "QSLINK", "OLINK", "NoTrigger", "OVERALL"]
         eval_dict = {k: {"predict": 0, "gold": 0, "correct": 0, "p": 0, "r": 0, "f1": 0} for k in link_types}
-        file2links = defaultdict(lambda: defaultdict(list))
+        file2links = defaultdict(lambda: defaultdict(set))
 
-        eval_optional_roles = "source" in self.relations
+        if eval_optional_roles and "source" not in self.relations:
+            eval_optional_roles = False
+
         eval_null_mover = metric != Metrics.STRICT
 
         for example, ori_pred_triples in zip(self.dev_examples, pred_triples_list):
@@ -739,21 +739,24 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
                     if link_type != "MOVELINK":
                         pred_links = set(filter(lambda x: x[1] != "" and x[2] != "" and x[3] != "", pred_links))
 
-                file2links[file][link_type].extend(pred_links)
+                file2links[file][link_type].update(pred_links)
 
         for file, pred_link_dict in file2links.items():
             path = os.path.join(self.data_dir, 'xml', file)
-            gold_link_dict = load_links_from_file(path, metric, eval_optional_roles, eval_null_mover)
+            document = Document(path, metric, eval_optional_roles, eval_null_mover, eval_link_attr)
+            gold_link_dict = document.load_links_from_file()
+            # gold_link_dict = load_links_from_file(path, metric, eval_optional_roles, eval_null_mover)
 
             # pred_link_dict["QSLINK"].extend(pred_link_dict["NoTrigger"])
-
             for link_type in link_types:
                 gold_links = gold_link_dict[link_type]
                 pred_links = pred_link_dict[link_type]
 
-                correct_links = Counter(gold_links) & Counter(pred_links)
-                gold_num, pred_num, correct_num = len(gold_links), len(pred_links), sum(correct_links.values())
+                correct_links = gold_links & pred_links
+                gold_num, pred_num, correct_num = len(gold_links), len(pred_links), len(correct_links)
 
+                # if pred_num != gold_num and link_type != "MOVELINK":
+                #     print(1)
                 # if pred_num != correct_num:
                 #     print(file)
                 #     print("gold_link")
@@ -784,81 +787,81 @@ class EntityAwareMHSDataProcessor_2(EntityAwareMHSDataProcessor):
             eval_dict[k]["f1"] = f
         return eval_dict
 
-    def evaluate_exact(self, pred_triples_list, allow_null_mover=False, eval_null_roles=True, eval_optional_roles=True):
-
-        link_types = ["MOVELINK", "QSLINK", "OLINK", "NoTrigger", "OVERALL"]
-        eval_dict = {k: {"predict": 0, "gold": 0, "correct": 0, "p": 0, "r": 0, "f1": 0} for k in link_types}
-        file2links = defaultdict(lambda: defaultdict(list))
-
-        if eval_optional_roles and "source" not in self.relations:
-            return {}
-
-        # eval_optional_roles = "source" in self.relations
-        for example, ori_pred_triples in zip(self.dev_examples, pred_triples_list):
-            file = example.file
-            tags = example.features["tags"]
-            element_ids = example.element_ids
-
-            pred_triples = self.decode_triples(example.tokens, ori_pred_triples)
-            pred_triples = [(element_ids[s], p, element_ids[o]) for s, p, o in pred_triples]
-            pred_link_dict = self.get_links(pred_triples, eval_optional_roles)
-            other_pred_link_dict = self.post_process(pred_triples, tags,
-                                                     element_ids) if allow_null_mover else defaultdict(set)
-
-            # pred_triples = example.triples
-            # pred_triples = [(element_ids[s], p, element_ids[o]) for s, p, o in pred_triples]
-            # pred_link_dict = self.get_links(pred_triples, eval_optional_roles)
-            # other_pred_link_dict = self.post_process(pred_triples, tags,
-            #                                          element_ids) if allow_null_mover else defaultdict(set)
-
-            for link_type in link_types:
-                pred_links = pred_link_dict[link_type] | other_pred_link_dict[link_type]
-                file2links[file][link_type].extend(pred_links)
-
-        for file, pred_link_dict in file2links.items():
-            path = os.path.join(self.data_dir, 'xml', file)
-            gold_link_dict = load_gold_triple(path, eval_optional_roles, eval_null_roles)
-
-            # pred_link_dict["QSLINK"].extend(pred_link_dict["NoTrigger"])
-
-            for link_type in link_types:
-                gold_links = gold_link_dict[link_type]
-                pred_links = pred_link_dict[link_type]
-
-                correct_links = Counter(gold_links) & Counter(pred_links)
-                gold_num, pred_num, correct_num = len(gold_links), len(pred_links), sum(correct_links.values())
-
-                # if link_type == "MOVELINK" and pred_num != correct_num:
-                #     print(file)
-                #     print("gold_link")
-                #     gold_link_counter = Counter(gold_links) - Counter(pred_links)
-                #     for link in gold_link_counter.elements():
-                #         print(link)
-                #
-                #     print("pred_link")
-                #     pred_link_counter = Counter(pred_links) - Counter(gold_links)
-                #     for link in pred_link_counter.elements():
-                #         print(link)
-                #
-                #     print()
-
-                eval_dict[link_type]["predict"] += pred_num
-                eval_dict[link_type]["gold"] += gold_num
-                eval_dict[link_type]["correct"] += correct_num
-
-                if link_type != "NoTrigger":
-                    eval_dict["OVERALL"]["predict"] += pred_num
-                    eval_dict["OVERALL"]["gold"] += gold_num
-                    eval_dict["OVERALL"]["correct"] += correct_num
-
-        # eval_dict["QSLINK"] = {k: eval_dict["QSLINK"][k] + eval_dict["NoTrigger"][k] for k in eval_dict["QSLINK"]}
-
-        for k, v in eval_dict.items():
-            p, r, f = self.calculate_prf(v["gold"], v["predict"], v["correct"])
-            eval_dict[k]["p"] = p
-            eval_dict[k]["r"] = r
-            eval_dict[k]["f1"] = f
-        return eval_dict
+    # def evaluate_exact(self, pred_triples_list, allow_null_mover=False, eval_null_roles=True, eval_optional_roles=True):
+    #
+    #     link_types = ["MOVELINK", "QSLINK", "OLINK", "NoTrigger", "OVERALL"]
+    #     eval_dict = {k: {"predict": 0, "gold": 0, "correct": 0, "p": 0, "r": 0, "f1": 0} for k in link_types}
+    #     file2links = defaultdict(lambda: defaultdict(list))
+    #
+    #     if eval_optional_roles and "source" not in self.relations:
+    #         return {}
+    #
+    #     # eval_optional_roles = "source" in self.relations
+    #     for example, ori_pred_triples in zip(self.dev_examples, pred_triples_list):
+    #         file = example.file
+    #         tags = example.features["tags"]
+    #         element_ids = example.element_ids
+    #
+    #         pred_triples = self.decode_triples(example.tokens, ori_pred_triples)
+    #         pred_triples = [(element_ids[s], p, element_ids[o]) for s, p, o in pred_triples]
+    #         pred_link_dict = self.get_links(pred_triples, eval_optional_roles)
+    #         other_pred_link_dict = self.post_process(pred_triples, tags,
+    #                                                  element_ids) if allow_null_mover else defaultdict(set)
+    #
+    #         # pred_triples = example.triples
+    #         # pred_triples = [(element_ids[s], p, element_ids[o]) for s, p, o in pred_triples]
+    #         # pred_link_dict = self.get_links(pred_triples, eval_optional_roles)
+    #         # other_pred_link_dict = self.post_process(pred_triples, tags,
+    #         #                                          element_ids) if allow_null_mover else defaultdict(set)
+    #
+    #         for link_type in link_types:
+    #             pred_links = pred_link_dict[link_type] | other_pred_link_dict[link_type]
+    #             file2links[file][link_type].extend(pred_links)
+    #
+    #     for file, pred_link_dict in file2links.items():
+    #         path = os.path.join(self.data_dir, 'xml', file)
+    #         gold_link_dict = load_gold_triple(path, eval_optional_roles, eval_null_roles)
+    #
+    #         # pred_link_dict["QSLINK"].extend(pred_link_dict["NoTrigger"])
+    #
+    #         for link_type in link_types:
+    #             gold_links = gold_link_dict[link_type]
+    #             pred_links = pred_link_dict[link_type]
+    #
+    #             correct_links = Counter(gold_links) & Counter(pred_links)
+    #             gold_num, pred_num, correct_num = len(gold_links), len(pred_links), sum(correct_links.values())
+    #
+    #             # if link_type == "MOVELINK" and pred_num != correct_num:
+    #             #     print(file)
+    #             #     print("gold_link")
+    #             #     gold_link_counter = Counter(gold_links) - Counter(pred_links)
+    #             #     for link in gold_link_counter.elements():
+    #             #         print(link)
+    #             #
+    #             #     print("pred_link")
+    #             #     pred_link_counter = Counter(pred_links) - Counter(gold_links)
+    #             #     for link in pred_link_counter.elements():
+    #             #         print(link)
+    #             #
+    #             #     print()
+    #
+    #             eval_dict[link_type]["predict"] += pred_num
+    #             eval_dict[link_type]["gold"] += gold_num
+    #             eval_dict[link_type]["correct"] += correct_num
+    #
+    #             if link_type != "NoTrigger":
+    #                 eval_dict["OVERALL"]["predict"] += pred_num
+    #                 eval_dict["OVERALL"]["gold"] += gold_num
+    #                 eval_dict["OVERALL"]["correct"] += correct_num
+    #
+    #     # eval_dict["QSLINK"] = {k: eval_dict["QSLINK"][k] + eval_dict["NoTrigger"][k] for k in eval_dict["QSLINK"]}
+    #
+    #     for k, v in eval_dict.items():
+    #         p, r, f = self.calculate_prf(v["gold"], v["predict"], v["correct"])
+    #         eval_dict[k]["p"] = p
+    #         eval_dict[k]["r"] = r
+    #         eval_dict[k]["f1"] = f
+    #     return eval_dict
 
     # def get_links(self, spo_triples, decompose=True):
     #     move_links = {}

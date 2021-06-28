@@ -23,7 +23,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   BertTokenizer,
                                   RobertaConfig,
                                   XLMConfig, XLNetConfig)
-from utils.spaceeval_utils_new import Metrics
+from utils.spaceeval_utils import Metrics
 
 logger = logging.getLogger(__name__)
 

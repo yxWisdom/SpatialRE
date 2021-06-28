@@ -17,14 +17,14 @@ from tqdm import tqdm
 from data_utils.entity_aware_mhs_utils import EntityAwareMHSDataProcessor_2
 from data_utils.entity_aware_mhs_utils_softmax import SoftmaxEntityAwareMHSDataProcessor
 from data_utils.mhs_utils import processors
-from model.mhs import EATransformerMHS, EATransformerMHSSoftmax
+from model.mhs import EATransformerMHS, EATransformerMHSSoftmax, LSTMMHS, BERTMHS, TransformerMHS
 from model.semantic_role_labeling import BertSRLEncoder
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
                                   BertTokenizer,
                                   RobertaConfig,
                                   XLMConfig, XLNetConfig)
-from utils.spaceeval_utils_new import Metrics
+from utils.spaceeval_utils import Metrics
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,17 @@ ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys())
 
 MODEL_CLASSES = {
     'entity_aware_transformer': (BertSRLEncoder, EATransformerMHS, BertTokenizer),
+    'transformer': (BertSRLEncoder, TransformerMHS, BertTokenizer),
+    'lstm':  (BertSRLEncoder, LSTMMHS, BertTokenizer),
+    'bert': (BertSRLEncoder, BERTMHS, BertTokenizer),
     'ea_transformer_softmax': (BertSRLEncoder, EATransformerMHSSoftmax, BertTokenizer)
 }
 
 DATA_PROCESSORS = {
     'entity_aware_transformer': EntityAwareMHSDataProcessor_2,
+    'transformer': EntityAwareMHSDataProcessor_2,
+    'lstm': EntityAwareMHSDataProcessor_2,
+    'bert': EntityAwareMHSDataProcessor_2,
     'ea_transformer_softmax': SoftmaxEntityAwareMHSDataProcessor
 }
 
@@ -260,8 +266,8 @@ def evaluate(args, model, tokenizer, processor, prefix="", dataset=None, save_pr
         # official_result_2 = processor.evaluate_exact(pred_triples, eval_null_roles=False, allow_null_mover=False)
 
         result = processor.evaluate(pred_triples)
-        full_result = processor.evaluate_1(pred_triples, Metrics.STRICT, eval_optional_roles=True)
-        part_result = processor.evaluate_1(pred_triples, Metrics.STRICT, eval_optional_roles=False)
+        full_result = processor.evaluate_exact(pred_triples, Metrics.STRICT, eval_optional_roles=True)
+        part_result = processor.evaluate_exact(pred_triples, Metrics.STRICT, eval_optional_roles=False)
 
         # official_result = processor.evaluate_1(pred_triples, Metrics.OFFICIAL)
         # default_result = processor.evaluate_1(pred_triples, Metrics.DEFAULT)

@@ -8,7 +8,8 @@ import os
 from data_utils.entity_aware_dep_mhs_utils import InputFeatures
 from data_utils.entity_aware_mhs_utils import EntityAwareMHSDataProcessor_2, InputExample
 from utils.bert_utils import align_labels
-from utils.spaceeval_utils_new import Metrics, load_links_from_file
+from utils.spaceeval_utils_new import load_links_from_file
+from utils.spaceeval_utils import Metrics
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,12 @@ class SoftmaxEntityAwareMHSDataProcessor(EntityAwareMHSDataProcessor_2):
             if role_type not in self.role2link_dict:
                 continue
             link_type = self.role2link_dict[role_type]
+            if link_type == "NoTrigger":
+                link2tuples[link_type].add((link_type, '', s, o))
+                # comment: role_type is QSLINK or OLINK
+                link2tuples[role_type].add((role_type, '', s, o))
+                continue
+
             if link_type == "LINK":
                 tag = example.features["tags"][s][2:]
                 link_types = self.ss2linkType.get(tag, [])
@@ -191,7 +198,6 @@ class SoftmaxEntityAwareMHSDataProcessor(EntityAwareMHSDataProcessor_2):
                 link_types = [link_type]
             if example.element_ids:
                 s, o = example.element_ids[s], example.element_ids[o]
-
             for link_type in link_types:
                 if s not in raw_link_dict[link_type]:
                     raw_link_dict[link_type][s] = OrderedDict([(role, set()) for role in self.link2role_dict[link_type]])
@@ -210,16 +216,13 @@ class SoftmaxEntityAwareMHSDataProcessor(EntityAwareMHSDataProcessor_2):
                             role_set.add("")
                         role_group += (role_set,)
                 for tuple_ in itertools.product(*role_group):
-                    # TODO: 注意NoTrigger
-                    if link_type == "NoTrigger":
-                        trajector = trigger
-                        link2tuples[link_type].add((link_type, '', trajector) + tuple_)
-                        link2tuples["QSLINK"].add(("QSLINK", '', trajector) + tuple_)
-                    # elif link_type == "MOVELINK" and not eval_optional_roles:
-                    #     link_tuple = (link_type, trigger,) + tuple_
-                    #     link2tuples[link_type].add(link_tuple[:3])
-                    else:
-                        link2tuples[link_type].add((link_type, trigger,) + tuple_)
+                    link2tuples[link_type].add((link_type, trigger,) + tuple_)
+                    # # TODO: 注意NoTrigger
+                    # if link_type == "NoTrigger":
+                    #     trajector = trigger
+                    #     link2tuples[link_type].add((link_type, '', trajector) + tuple_)
+                    #     link2tuples["QSLINK"].add(("QSLINK", '', trajector) + tuple_)
+                    # else:
 
         return link2tuples
 

@@ -148,7 +148,7 @@ class BertLSTMCrfJointTokenAndSeq(BertJointTokenAndSeq):
         pooled_output = self.dropout(pooled_output)
         seq_logits = self.seq_classifier(pooled_output)
 
-        sequence_output = self.dropout(sequence_output)
+        # sequence_output = self.dropout(sequence_output)
         batch_lengths = torch.sum(mask, -1)
         lstm_output, _ = self.lstm_layer(sequence_output, seq_len=batch_lengths)
 

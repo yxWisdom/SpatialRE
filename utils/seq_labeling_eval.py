@@ -367,3 +367,72 @@ def classification_report(y_true, y_pred, digits=2, suffix=False):
                              width=width, digits=digits)
 
     return report
+
+
+def classification_report_dict(y_true, y_pred, suffix=False, eval_labels=None):
+    true_entities = set(get_entities(y_true, suffix))
+    pred_entities = set(get_entities(y_pred, suffix))
+
+    d1 = defaultdict(set)
+    d2 = defaultdict(set)
+    for e in true_entities:
+        d1[e[0]].add((e[1], e[2]))
+    for e in pred_entities:
+        d2[e[0]].add((e[1], e[2]))
+
+    ps, rs, f1s, correct_s, pred_s, true_s = [], [], [], [], [], []
+
+    import collections
+    eval_dict = collections.OrderedDict()
+
+    for type_name, true_entities in d1.items():
+        if eval_labels is not None and type_name not in eval_labels:
+            continue
+        pred_entities = d2[type_name]
+        nb_correct = len(true_entities & pred_entities)
+        nb_pred = len(pred_entities)
+        nb_true = len(true_entities)
+
+        p = nb_correct / nb_pred if nb_pred > 0 else 0
+        r = nb_correct / nb_true if nb_true > 0 else 0
+        f1 = 2 * p * r / (p + r) if p + r > 0 else 0
+
+        eval_dict[type_name] = {
+            "predict": nb_pred,
+            "gold": nb_true,
+            "correct": nb_correct,
+            "p": p,
+            "r": r,
+            "f1": f1
+        }
+        ps.append(p)
+        rs.append(r)
+        f1s.append(f1)
+        true_s.append(nb_true)
+        correct_s.append(nb_correct)
+        pred_s.append(nb_pred)
+
+    true, correct, pred = np.sum(true_s), np.sum(correct_s), np.sum(pred_s)
+    p = correct / pred if pred > 0 else 0
+    r = correct / true if true > 0 else 0
+    f1 = 2 * p * r / (p + r) if p + r > 0 else 0
+
+    eval_dict['micro avg'] = {
+        "predict": pred,
+        "gold": true,
+        "correct": correct,
+        "p": p,
+        "r": r,
+        "f1": f1
+    }
+
+    eval_dict['macro avg'] = {
+        "predict": pred,
+        "gold": true,
+        "correct": correct,
+        "p": np.sum(ps) / len(ps),
+        "r": np.sum(rs) / len(rs),
+        "f1": np.sum(f1s) / len(f1s)
+    }
+
+    return eval_dict
